@@ -6,7 +6,9 @@
 Adafruit_NeoPixel strip (NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 
-  //byte diodes[NUMPIXELS] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
+  byte diodes[NUMPIXELS] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31};
+
+  byte voice[NUMPIXELS] = {0,32,192,192,192,192,32,0, 0,64,192,255,255,192,64,0, 0,64,192,255,255,192,64,0, 0,32,192,192,192,128,32,0};
   byte frames[NUMPIXELS][NUMF][3];
   int durations[NUMPIXELS][NUMF];
   int gotos[NUMPIXELS][NUMF];
@@ -29,18 +31,22 @@ Adafruit_NeoPixel strip (NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 int totalms = 0;
 void setup() {
     Serial.begin(115200);
-    word d = 100;
-    for (byte i = 0; i < 8; i++) {
-    kf(i, 0, 0, 0, 0 + i*d),
-    kf(i, 255, 0, 0, 500 + i*d),
-    kf(i, 255, 0, 255, 900 + i*d),
-    kf(i, 0, 255, 0, 1500 + i*d),
-    kf(i, 255, 0, 0, 2000 + i*d, 500 + i*d);
+    word d = 1000;
 
+    for (byte j = 0; j < 4; j++) {
+     for (byte i = 0; i < 8; i++) {
+      kf(i+j*8, 0, 0, 0, 0 + i*d),
+    kf(i+j*8, 64, 0, 0, 300 + i*d),
+    kf(i+j*8, 64, 0, 64, 10000 + i*d),
+    kf(i+j*8, 0, 64, 64, 15000 + i*d),
+    kf(i+j*8, 0, 64, 0, 20000 + i*d),
+    kf(i+j*8, 64, 64, 0, 25000 + i*d),
+    kf(i+j*8, 64, 0, 0, 30000 + i*d, 300 + i*d);
+      }
     }
 
    strip.begin();             
-   strip.setBrightness(50);  
+   strip.setBrightness(100);  
    totalms = millis();
 }
 
@@ -61,9 +67,10 @@ byte getNextKf(byte i, int p) {
 void loop() {
   word elapsed = millis() - totalms;
   totalms = millis();
+  elapsed = elapsed * 1;
 
   
-  for( byte i = 0; i < 8; i++) {
+  for( byte i = 0; i < 32; i++) {
      if (periods[i] == 0) 
        continue;
     //  strip.setPixelColor(i, strip.Color(255, 255, 255)); 
@@ -94,11 +101,15 @@ void loop() {
      byte g = getComponent(1, frames[i][next][1], frames[i][next - 1][1], prc);
      byte b = getComponent(2, frames[i][next][2], frames[i][next - 1][2], prc);
 
-//continue;    
-     strip.setPixelColor(i, strip.Color(r, g, b)); 
-     strip.setPixelColor(i+8, strip.Color(r, g, b)); 
-     strip.setPixelColor(i+16, strip.Color(r, g, b)); 
-     strip.setPixelColor(i+24, strip.Color(r, g, b)); 
+     float v = sin((float)totalms / 100);
+     if (v < 0) v = 0;
+
+     r = max((float)r, v*voice[i]); 
+     g = max((float)g, v*voice[i]); 
+     b = max((float)b, v*voice[i]); 
+
+
+     strip.setPixelColor(diodes[i], strip.Color(r, g, b)); 
   }
      strip.show();
      //delay(10);

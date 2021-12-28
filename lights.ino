@@ -1,11 +1,20 @@
 #include <Adafruit_NeoPixel.h>
-#define PIN  13
-#define NUMPIXELS 64
+#define NUMPIXELS 42
+#define BOTTOMPIXELS 34
+#define NUMPIXELSWAVE 8
 #define NUMF 64
-Adafruit_NeoPixel strip (NUMPIXELS, 13, NEO_GRBW + NEO_KHZ800);
+#define VWAVES 4
+Adafruit_NeoPixel strip (NUMPIXELS, 13, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel bottomStrip (NUMPIXELS, 12, NEO_GRB + NEO_KHZ800);
 #include <Wire.h>
 
-byte diodes[NUMPIXELS] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31};
+byte diodes[NUMPIXELS] = {36, 37, 38, 39, 40, 41, 24, 23, 22, 21, 20, 16, 17, 18, 19, 13, 14, 15, 10, 11, 12, 35, 34, 33, 32, 31, 30, 25, 26, 27, 28, 29, 3, 4, 5, 6, 2, 1, 0, 7, 8, 9};
+
+byte voiceWaves[VWAVES][NUMPIXELSWAVE] = {{12, 11, 5, 4, 3, 2, 1, 0},
+  {33, 32, 26, 25, 24, 23, 22, 21},
+  {13, 14, 15, 16, 17, 18, 19, 20},
+  {34, 35, 36, 37, 38, 39, 40, 41}
+} ;
 
 byte voice[NUMPIXELS];
 byte frames[NUMPIXELS][NUMF][3];
@@ -18,12 +27,19 @@ int pos[NUMPIXELS];
 
 int sensorThreshold = 1000;
 int sensorTiming = 300;
-int voiceThreshold = 3800;
+
+
+int voiceThreshold = 3950;
+int voiceLockRelease = 100;
+int voiceLockReleaseLength = 1500;
+byte voiceWaveDecay = 20;
+
 ulong leftSensorLock = 0;
 ulong rightSensorLock = 0;
 ulong voiceLock = 0;
 ulong voiceRelease = 0;
-int voiceLockRelease = 1600;
+ulong lastVoiceProcessed = 0;
+
 
 void kf(byte d, byte r, byte g, byte b, int msec, int gotox = 0) {
   byte i = frameCnt[d];
@@ -37,27 +53,27 @@ void kf(byte d, byte r, byte g, byte b, int msec, int gotox = 0) {
 }
 int totalms = 0;
 void setup() {
-  word d = 10;
+  word d = 1300;
 
   for (byte i = 0; i < NUMPIXELS; i++) {
-    diodes[i] = i;
-    if (i > 4 && i < 10)
-      voice[i] = 255;
-    int del = i * d;
-    kf(i, 0, 0, 0, 0 + del);
-    kf(i, 250, 0, 0, 500 + del);
-    kf(i, 250, 0, 25, 1000 + del);
-    kf(i, 0, 250, 25, 1500 + del);
-    kf(i, 0, 250, 0, 2000 + del);
-    kf(i, 250, 250, 0, 2500 + del);
-    kf(i, 250, 0, 0, 3000 + del, 500 + del);
+    int del = (i % 21) * d;
+    kf(i, 0, 0, 0, 0);
+    kf(i, 250, 0, 0, 5000 + del);
+    
+    kf(i, 250, 0, 250, 12000 + del);
+    kf(i, 0, 250, 250, 15000 + del);
+    kf(i, 0, 250, 0, 20000 + del);
+    kf(i, 250, 250, 0, 25000 + del);
+    kf(i, 250, 0, 0, 30000 + del, 5000 + del);
+
 
     kf(i, 0, 0, 0, 42000);
-
     kf(i, 0, 0, 0, 48000);
     kf(i, 0, 250, 0, 50000);
     kf(i, 0, 0, 250, 60000);
     kf(i, 0, 250, 0, 70000, 50000);
+
+
 
     kf(i, 0, 250, 0, 999000);
   }
@@ -70,6 +86,8 @@ void setup() {
   Wire.begin();
   Serial.begin(115200);
   strip.begin();
+  bottomStrip.begin();
+  bottomStrip.setBrightness(255);
   strip.setBrightness(255);
   totalms = millis();
   analogSetAttenuation(ADC_0db);
@@ -92,8 +110,8 @@ byte getNextKf(byte i, int p) {
 word soundLevel;
 word samplesCnt;
 
-  double v = 0;
-  
+double v = 0;
+
 void loop() {
   word elapsed = millis() - totalms;
   totalms = millis();
@@ -132,39 +150,53 @@ void loop() {
 
   if (soundLevel > voiceThreshold) {
     voiceLock = totalms;
+    voiceRelease = 0;
     v = max(v, abs(soundLevel - voiceThreshold) / 100.0);
     if (v > 1)
       v = 1;
-  } else {
-     v = v - 0.03;
+  } else if (soundLevel < voiceThreshold - 200) {
+    v = v - 0.01;
     if (v < 0)
       v = 0;
   }
-  
-  if (voiceLock > 0 && v == 0 && soundLevel < voiceThreshold - 200 && (totalms - voiceLock > voiceLockRelease)) {
+  //v = 0;
+  for (byte j = 0; j < VWAVES; j++) {
+    voice[voiceWaves[j][0]] = v * 255;
+  }
+
+  if (totalms - lastVoiceProcessed > 20) {
+    for (byte j = 0; j < VWAVES; j++) {
+      for (byte k = 1; k < NUMPIXELSWAVE; k++) {
+        byte kk = NUMPIXELSWAVE - k;
+        int vv = voice[voiceWaves[j][kk - 1]] - voiceWaveDecay;
+        if (vv < 0)
+          vv = 0;
+        voice[voiceWaves[j][kk]] = vv;
+      }
+    }
+    lastVoiceProcessed = totalms;
+  }
+
+
+  if (voiceLock > 0 && v < 0.8 && (totalms - voiceLock > voiceLockRelease)) {
     voiceLock = 0;
     voiceRelease = totalms;
   }
 
-  //v = 0;
+
   strip.clear();
   float rel = 1;
   if (voiceLock > 0)
-    rel = 0;
+    rel = 0.1;
   if (voiceRelease > 0) {
     int d = totalms - voiceRelease;
 
-    if (d > voiceLockRelease)
+    if (d > voiceLockReleaseLength)
       voiceRelease = 0;
-    rel = map(d, 0, voiceLockRelease, 0.0, 1000) / 1000.0;
+    rel = map(d, 0, voiceLockReleaseLength, 100, 1000) / 1000.0;
   }
-    Serial.print(v);
-    Serial.print('\t');
-    Serial.print(voiceRelease > 0 ? 1 : 0);
-    Serial.print('\t');
-    Serial.print(voiceLock > 0 ? 1 : 0);
-        Serial.println();
 
+  // rel = 1;
   for (byte i = 0; i < NUMPIXELS; i++) {
     if (periods[i] == 0)
       continue;
@@ -196,14 +228,31 @@ void loop() {
 
 
 
-    r = max((double)r * rel, v * voice[i]);
-    g = max((double)g * rel, v * voice[i]);
-    b = max((double)b * rel, v * voice[i]);
-
+    r = max((double)r * rel, voice[i] * 1.0);
+    g = max((double)g * rel, voice[i] * 1.0);
+    b = max((double)b * rel, voice[i] * 1.0);
 
     strip.setPixelColor(diodes[i], strip.Color(r, g, b));
 
+
+    r = r * rel;
+    g = g * rel;
+    b = b * rel;
+    if (i == 0)  {
+      for (byte j = 0; j < BOTTOMPIXELS / 2; j++) {
+        bottomStrip.setPixelColor(j, strip.Color(r, g, b));
+      }
+    }
+    if (i == 21)  {
+      for (byte j = 0; j < BOTTOMPIXELS / 2; j++) {
+        bottomStrip.setPixelColor(BOTTOMPIXELS / 2 + j, strip.Color(r, g, b));
+      }
+
+    }
+
+
   }
+  bottomStrip.show();
   strip.show();
 }
 
@@ -216,7 +265,7 @@ void leftSwitch() {
 
 void rightSwitch() {
   for (byte i = 0; i < NUMPIXELS; i++) {
-    pos[i] = 48000;
+    // pos[i] = 48000;
   }
 }
 
